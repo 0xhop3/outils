@@ -1,0 +1,144 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [nexus]
+  pull_request:
+    branches: [nexus]
+
+env:
+  GO_VERSION: '1.22'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up GO
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go Modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgres://testuser:testpass@localhost:5432/testdb?sslmode=disable
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+  
+build:
+  name: Build and Push Image
+  needs: test
+  runs-on: ubuntu-latest
+  if: github.event_name == 'push' && github.ref == 'refs/heads/nexus'
+
+  permissions:
+    contents: read
+    packages: write
+
+  steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Docker BuildX
+      uses: docker/setup-buildx-actions@v3
+
+    - name: Log in Container Registry
+      uses: docker/login-action@v3
+      with:
+        regitry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=sha,prefix=
+          type=raw,value=latest
+    - name: Build and Push
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+deploy:
+  name: Deploy to Digital Ocean
+  needs: build
+  runs-on: ubuntu-latest
+  if: github.event_name == 'push' && github.ref == 'refs/heads/nexus'
+
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Deploy to server
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.OUTILS_HOST }}
+        username: ${{ secrets.OUTILS_USERNAME }}
+        key: ${{ secrets.OUTILS_SSH_KEY }}
+        script: |
+          # Login to GitHub Container Registry
+          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+          # Pull latest image
+          docker pull ghcr.io/${{ github.repository }}:latest
+            
+          # Stop and remove old container
+          docker stop outils || true
+          docker rm outils || true
+            
+          # Run new container
+          docker run -d \
+            --name outils \
+            --restart unless-stopped \
+            -p 8080:8080 \
+            -e DATABASE_URL="${{ secrets.OUTILS_DATABASE_URL }}" \
+            -e FIREBASE_CREDENTIALS='${{ secrets.FIREBASE_CREDENTIALS }}' \
+            -e ENV=production \
+            ghcr.io/${{ github.repository }}:latest
+            
+          # Cleanup old images
+          docker image prune -f
