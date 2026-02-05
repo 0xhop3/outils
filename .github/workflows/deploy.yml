@@ -1,0 +1,25 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to server
+        uses: appleboy/ssh-actions@v1.0.3
+        with:
+          host: ${{ secrets.OUTILS_HOST }}
+          username: ${{ secrets.OUTILS_USERNAME }}
+          key: ${{ secrets.OUTILS_SSH_KEY }}
+          script: |
+            cd /outils
+            git pull orgin nexus
+            docker compose down
+            docker compose up -d --build
