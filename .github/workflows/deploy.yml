@@ -1,19 +1,15 @@
 name: Deploy
-
 on:
   push:
     branches: [nexus]
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@v6.0.2
       - name: Deploy to server
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.OUTILS_HOST }}
           username: ${{ secrets.OUTILS_USERNAME }}
