@@ -8,6 +8,10 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/0xhop3/outils/cmd/internal/config"
+	"github.com/0xhop3/outils/cmd/internal/database"
+	"github.com/0xhop3/outils/cmd/internal/handlers"
 )
 
 func main() {
@@ -39,7 +43,7 @@ func main() {
 	mux.HandleFunc("GET /ready", healthHandler.Ready)
 
 	server := &http.Server{
-		Addr: ":", config.Port,
+		Addr:         ":" + config.Port,
 		Handler:      mux,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
