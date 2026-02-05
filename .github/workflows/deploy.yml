@@ -16,7 +16,7 @@ jobs:
           key: ${{ secrets.OUTILS_SSH_KEY }}
           key_format: openssh
           script: |
-            cd /outils
+            cd outils
             git pull orgin nexus
             docker compose down
             docker compose up -d --build
