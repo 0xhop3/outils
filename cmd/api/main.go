@@ -9,9 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/0xhop3/outils/cmd/internal/config"
-	"github.com/0xhop3/outils/cmd/internal/database"
-	"github.com/0xhop3/outils/cmd/internal/handlers"
+	"github.com/0xhop3/outils/internal/auth"
+	"github.com/0xhop3/outils/internal/config"
+	"github.com/0xhop3/outils/internal/database"
+	"github.com/0xhop3/outils/internal/handlers"
 )
 
 func main() {
@@ -36,11 +37,25 @@ func main() {
 
 	slog.Info("Connected to database")
 
-	mux := http.NewServeMux()
+	firebaseAuthentication, err := auth.NewFirebaseAuthentication(config.FirebaseCredentialsFile)
+	if err != nil {
+		slog.Error("firebase error", "error", err)
+		os.Exit(1)
+	}
+
+	slog.Info("firebase initialized")
+
 	healthHandler := handlers.NewHealthHandler(db)
+	userHandler := handlers.NewUserHandler(db)
+
+	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", healthHandler.Check)
 	mux.HandleFunc("GET /ready", healthHandler.Ready)
+	mux.Handle("POST /api/register", firebaseAuthentication.Middleware(http.HandlerFunc(userHandler.Register)))
+	mux.Handle("GET /api/me", firebaseAuthentication.Middleware(http.HandlerFunc(userHandler.GetMe)))
+
+	handler := corsMiddleware(mux)
 
 	server := &http.Server{
 		Addr:         ":" + config.Port,
@@ -73,4 +88,19 @@ func main() {
 	}
 
 	slog.Info("server stopped gracefully")
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }

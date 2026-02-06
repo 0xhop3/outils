@@ -7,6 +7,14 @@ import (
 	"github.com/0xhop3/outils/internal/models"
 )
 
+const (
+	GET_USER = `SELECT id, firebase_uid, email, display_name, created_at, updated_at
+		FROM users
+		WHERE firebase_uid = $1`
+	CREATE_USER = `INSERT INTO users (firebase_uid, email, display_name) VALUES ($1, $2, $3, $4)
+		RETURNING id, created_at, updated_at`
+)
+
 type UserRepository struct {
 	db *sql.DB
 }
