@@ -59,7 +59,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:         ":" + config.Port,
-		Handler:      mux,
+		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
