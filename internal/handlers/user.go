@@ -1,14 +1,12 @@
 package handlers
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/0xhop3/outils/internal/auth"
-	"github.com/0xhop3/outils/internal/models"
 )
 
 const (
