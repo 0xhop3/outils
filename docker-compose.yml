@@ -19,9 +19,9 @@ services:
     environment:
       PORT: "8080"
       DATABASE_URL: "postgres://outils:outils@postgres:5432/outils?sslmode=disable"
-      FIREBASE_CREDENTIALS_FILE: "outils/firebase-credentials.json"
+      FIREBASE_CREDENTIALS_FILE: "/outils/firebase-credentials.json"
     volumes:
-      - ./firebase-credentials.json:outils/firebase-credentials.json:ro
+      - ./firebase-credentials.json:/outils/firebase-credentials.json:ro
     depends_on:
       postgres:
         condition: service_healthy
