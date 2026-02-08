@@ -10,12 +10,8 @@ import (
 )
 
 const (
-	GET_USER = `SELECT id, firebase_uid, email, display_name, created_at, updated_at
-		FROM users
-		WHERE firebase_uid = $1`
-	CREATE_USER = `INSERT INTO users (firebase_uid, email, display_name) VALUES ($1, $2, $3)
-
-		RETURNING id, created_at, updated_at`
+	GET_USER    = `SELECT id, firebase_uid, email, display_name, created_at, updated_at FROM users WHERE firebase_uid = $1`
+	CREATE_USER = `INSERT INTO users (firebase_uid, email, display_name) VALUES ($1, $2, $3) RETURNING id, created_at, updated_at`
 )
 
 type UserHandler struct {
