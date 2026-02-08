@@ -3,15 +3,11 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/0xhop3/outils/internal/auth"
-)
-
-const (
-	GET_USER    = `SELECT id, firebase_uid, email, display_name, created_at, updated_at FROM users WHERE firebase_uid = $1`
-	CREATE_USER = `INSERT INTO users (firebase_uid, email, display_name) VALUES ($1, $2, $3) RETURNING id, created_at, updated_at`
 )
 
 type UserHandler struct {
@@ -37,33 +33,66 @@ type RegisterRequest struct {
 
 func (h *UserHandler) Register(w http.ResponseWriter, r *http.Request) {
 	firebaseUID := auth.GetUserID(r.Context())
+	slog.Info("register called", "firebaseUID", firebaseUID)
 
+	if firebaseUID == "" {
+		slog.Error("firebaseUID is empty")
+		http.Error(w, `{"error":"no user id in context"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Check if user exists
 	var user User
-	err := h.db.QueryRowContext(r.Context(), GET_USER, firebaseUID).Scan(&user.ID, &user.FirebaseUID, &user.Email, &user.DisplayName, &user.CreatedAt)
+	var displayName sql.NullString
 
-	if err != nil {
+	err := h.db.QueryRowContext(r.Context(),
+		`SELECT id, firebase_uid, email, display_name, created_at 
+		 FROM users WHERE firebase_uid = $1`,
+		firebaseUID,
+	).Scan(&user.ID, &user.FirebaseUID, &user.Email, &displayName, &user.CreatedAt)
+
+	if err == nil {
+		slog.Info("user exists", "id", user.ID)
+		user.DisplayName = displayName.String
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(user)
 		return
 	}
 
 	if err != sql.ErrNoRows {
-		http.Error(w, `{"error": "database error"}`, http.StatusInternalServerError)
+		slog.Error("database query error", "error", err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
 
+	slog.Info("user not found, creating new user")
+
+	// Parse request
 	var req RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error": "invalid request"}`, http.StatusBadRequest)
+		slog.Error("invalid request body", "error", err)
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
 	}
 
-	err = h.db.QueryRowContext(r.Context(), CREATE_USER, firebaseUID, req.Email, req.DisplayName).Scan(&user.ID, &user.FirebaseUID, &user.Email, &user.DisplayName, &user.CreatedAt)
+	slog.Info("creating user", "email", req.Email, "displayName", req.DisplayName)
+
+	// Create user
+	err = h.db.QueryRowContext(r.Context(),
+		`INSERT INTO users (firebase_uid, email, display_name) 
+		 VALUES ($1, $2, $3)
+		 RETURNING id, firebase_uid, email, display_name, created_at`,
+		firebaseUID, req.Email, req.DisplayName,
+	).Scan(&user.ID, &user.FirebaseUID, &user.Email, &displayName, &user.CreatedAt)
 
 	if err != nil {
-		http.Error(w, `{"error": "failed to create user"}`, http.StatusInternalServerError)
+		slog.Error("insert failed", "error", err)
+		http.Error(w, `{"error":"failed to create user"}`, http.StatusInternalServerError)
 		return
 	}
+
+	user.DisplayName = displayName.String
+	slog.Info("user created", "id", user.ID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -72,19 +101,28 @@ func (h *UserHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	firebaseUID := auth.GetUserID(r.Context())
+	slog.Info("getme called", "firebaseUID", firebaseUID)
 
 	var user User
-	err := h.db.QueryRowContext(r.Context(), GET_USER, firebaseUID).Scan(&user.ID, &user.FirebaseUID, &user.Email, &user.DisplayName, &user.CreatedAt)
+	var displayName sql.NullString
+
+	err := h.db.QueryRowContext(r.Context(),
+		`SELECT id, firebase_uid, email, display_name, created_at 
+		 FROM users WHERE firebase_uid = $1`,
+		firebaseUID,
+	).Scan(&user.ID, &user.FirebaseUID, &user.Email, &displayName, &user.CreatedAt)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, `{"error": "user not found"}`, http.StatusNotFound)
+		http.Error(w, `{"error":"user not found"}`, http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		slog.Error("database error", "error", err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
 
-	if err != nil {
-		http.Error(w, `{"error": "database error"}`, http.StatusInternalServerError)
-		return
-	}
+	user.DisplayName = displayName.String
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(user)
