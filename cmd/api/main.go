@@ -32,7 +32,7 @@ func main() {
 	defer db.Close()
 	slog.Info("Connected to database")
 
-	firebaseAuth, err := auth.NewFirebaseAuth(cfg.FirebaseCredentialsFile)
+	firebaseAuth, err := auth.NewFirebaseAuthentication(cfg.FirebaseCredentialsFile)
 	if err != nil {
 		slog.Error("firebase error", "error", err)
 		os.Exit(1)
