@@ -47,13 +47,26 @@ func main() {
 
 	healthHandler := handlers.NewHealthHandler(db)
 	userHandler := handlers.NewUserHandler(db)
+	taskListHandler := handlers.NewTaskListHandler(db)
+	taskHandler := handlers.NewTaskHandler(db)
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", healthHandler.Check)
 	mux.HandleFunc("GET /ready", healthHandler.Ready)
+
 	mux.Handle("POST /api/register", firebaseAuthentication.Middleware(http.HandlerFunc(userHandler.Register)))
 	mux.Handle("GET /api/me", firebaseAuthentication.Middleware(http.HandlerFunc(userHandler.GetMe)))
+
+	mux.Handle("POST /api/tasklists", firebaseAuthentication.Middleware(http.HandlerFunc(taskListHandler.Create)))
+	mux.Handle("GET /api/tasklists/{id}", firebaseAuthentication.Middleware(http.HandlerFunc(taskListHandler.GetOne)))
+	mux.Handle("GET /api/tasklists", firebaseAuthentication.Middleware(http.HandlerFunc(taskListHandler.GetAll)))
+	mux.Handle("GET /api/tasklists/{id}", firebaseAuthentication.Middleware(http.HandlerFunc(taskListHandler.Delete)))
+
+	mux.Handle("POST /api/tasklists/{id}/tasks", firebaseAuthentication.Middleware(http.HandlerFunc(taskHandler.Create)))
+	mux.Handle("GET /api/tasklists/{id}/tasks", firebaseAuthentication.Middleware(http.HandlerFunc(taskHandler.GetAll)))
+	mux.Handle("PUT /api/tasks/{id}", firebaseAuthentication.Middleware(http.HandlerFunc(taskHandler.Update)))
+	mux.Handle("DELETE /api/tasks/{id}", firebaseAuthentication.Middleware(http.HandlerFunc(taskHandler.Delete)))
 
 	handler := corsMiddleware(mux)
 
