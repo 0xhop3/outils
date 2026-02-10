@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/0xhop3/outils/internal/auth"
@@ -39,42 +38,47 @@ type UpdateTaskRequest struct {
 
 func (h *TaskHandler) verifyTaskListOwnership(ctx context.Context, taskListID, firebaseUID string) bool {
 	var exists bool
-	err := h.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM task_lists tl JOIN users u ON u.id = tl.user_id
-		WHERE tl.id = $1 AND u.firebase_uid = $2)`, taskListID, firebaseUID,
+	err := h.db.QueryRowContext(ctx,
+		`SELECT EXISTS(
+			SELECT 1 FROM task_lists tl
+			JOIN users u ON u.id = tl.user_id
+			WHERE tl.id = $1 AND u.firebase_uid = $2
+		)`,
+		taskListID, firebaseUID,
 	).Scan(&exists)
 	return err == nil && exists
 }
 
 func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	firebaseUID := auth.GetUserID(r.Context())
-
-	path := strings.TrimPrefix(r.URL.Path, "/api/tasklists/")
-	taskListID := strings.TrimSuffix(path, "/tasks")
+	taskListID := r.PathValue("id")
 
 	if !h.verifyTaskListOwnership(r.Context(), taskListID, firebaseUID) {
-		http.Error(w, `{"error": "task list not found"}`, http.StatusNotFound)
+		http.Error(w, `{"error":"task list not found"}`, http.StatusNotFound)
 		return
 	}
 
-	var request CreateTaskRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, `{"error": "invalid request"}`, http.StatusBadRequest)
+	var req CreateTaskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
 
-	if request.Title == "" {
-		http.Error(w, `{"error": "title is required"}`, http.StatusBadRequest)
+	if req.Title == "" {
+		http.Error(w, `{"error":"title is required"}`, http.StatusBadRequest)
 		return
 	}
 
 	var task Task
-	err := h.db.QueryRowContext(r.Context(), `INSERT INTO tasks (task_list_id, title) VALUES ($1, $2
-		RETURNING id, task_list_id, title, completed, created_at`, taskListID, request.Title).
-		Scan(&task.ID, &task.TaskListID, &task.Title, &task.Completed, &task.CreatedAt)
+	err := h.db.QueryRowContext(r.Context(),
+		`INSERT INTO tasks (task_list_id, title) VALUES ($1, $2)
+		 RETURNING id, task_list_id, title, completed, created_at`,
+		taskListID, req.Title,
+	).Scan(&task.ID, &task.TaskListID, &task.Title, &task.Completed, &task.CreatedAt)
 
 	if err != nil {
 		slog.Error("failed to create task", "error", err)
-		http.Error(w, `{"error": failed to create task}`, http.StatusInternalServerError)
+		http.Error(w, `{"error":"failed to create task"}`, http.StatusInternalServerError)
 		return
 	}
 
@@ -85,35 +89,32 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *TaskHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	firebaseUID := auth.GetUserID(r.Context())
-
-	path := strings.TrimPrefix(r.URL.Path, "/api/tasklists/")
-	taskListID := strings.TrimSuffix(path, "/tasks")
+	taskListID := r.PathValue("id")
 
 	if !h.verifyTaskListOwnership(r.Context(), taskListID, firebaseUID) {
-		http.Error(w, `{"error": "task list not found"}`, http.StatusNotFound)
+		http.Error(w, `{"error":"task list not found"}`, http.StatusNotFound)
 		return
 	}
 
-	rows, err := h.db.QueryContext(r.Context(), `SELECT id, task_list_id, title, completed, created_at
-		FROM tasks WHERE task_list_id = $1
-		ORDER BY created_at ASC`, taskListID,
+	rows, err := h.db.QueryContext(r.Context(),
+		`SELECT id, task_list_id, title, completed, created_at
+		 FROM tasks WHERE task_list_id = $1
+		 ORDER BY created_at ASC`,
+		taskListID,
 	)
-
 	if err != nil {
 		slog.Error("failed to get tasks", "error", err)
-		http.Error(w, `{"error": "database error"}`, http.StatusInternalServerError)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
-
 	defer rows.Close()
 
 	tasks := []Task{}
 	for rows.Next() {
 		var t Task
-		if err := rows.Scan(&t.ID, &t.Title, &t.CreatedAt, &t.Completed); err != nil {
+		if err := rows.Scan(&t.ID, &t.TaskListID, &t.Title, &t.Completed, &t.CreatedAt); err != nil {
 			continue
 		}
-
 		tasks = append(tasks, t)
 	}
 
@@ -123,7 +124,7 @@ func (h *TaskHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 
 func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 	firebaseUID := auth.GetUserID(r.Context())
-	taskID := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
+	taskID := r.PathValue("id")
 
 	var req UpdateTaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -159,22 +160,24 @@ func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 func (h *TaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	firebaseUID := auth.GetUserID(r.Context())
-	taskID := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
+	taskID := r.PathValue("id")
 
-	result, err := h.db.ExecContext(r.Context(), `DELETE FROM tasks t 
-		USING task_lists tl, users u
-		WHERE t.task_list_id = tl.id AND tl.user_id = u.id
-		AND t.id = $1 AND u.firebase_uid = $2`, taskID, firebaseUID)
-
+	result, err := h.db.ExecContext(r.Context(),
+		`DELETE FROM tasks t
+		 USING task_lists tl, users u
+		 WHERE t.task_list_id = tl.id AND tl.user_id = u.id
+		 AND t.id = $1 AND u.firebase_uid = $2`,
+		taskID, firebaseUID,
+	)
 	if err != nil {
 		slog.Error("failed to delete task", "error", err)
-		http.Error(w, `{"error": "database error"}`, http.StatusInternalServerError)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		http.Error(w, `{"error": "task not found"}`, http.StatusNotFound)
+		http.Error(w, `{"error":"task not found"}`, http.StatusNotFound)
 		return
 	}
 
