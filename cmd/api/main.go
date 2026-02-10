@@ -96,15 +96,19 @@ func main() {
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers for ALL requests
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type")
+		w.Header().Set("Access-Control-Max-Age", "3600")
 
+		// Handle preflight OPTIONS request
 		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
 		next.ServeHTTP(w, r)
 	})
+}
 }
