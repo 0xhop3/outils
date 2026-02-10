@@ -45,7 +45,7 @@ func (h *TaskHandler) verifyTaskListOwnership(ctx context.Context, taskListID, f
 	return err == nil && exists
 }
 
-func (h *TaskHandler) Create(w http.ResponseWriter, r http.Request) {
+func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	firebaseUID := auth.GetUserID(r.Context())
 
 	path := strings.TrimPrefix(r.URL.Path, "/api/tasklists/")
